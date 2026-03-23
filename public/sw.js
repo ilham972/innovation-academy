@@ -1,4 +1,4 @@
-const CACHE_NAME = "innovation-academy-v2";
+const CACHE_NAME = "innovation-academy-v3";
 const PRECACHE_ASSETS = ["/", "/manifest.json"];
 
 // Install: precache app shell
@@ -82,8 +82,8 @@ self.addEventListener("push", (event) => {
   event.waitUntil(
     self.registration.showNotification(data.title, {
       body: data.body,
-      icon: "/icons/icon-192.svg",
-      badge: "/icons/icon-144.png",
+      icon: "/icons/icon-192x192.png",
+      badge: "/icons/icon-144x144.png",
       vibrate: [200, 100, 200],
       tag: "notification-" + Date.now(),
     })
