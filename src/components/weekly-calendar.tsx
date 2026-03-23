@@ -19,6 +19,17 @@ export function WeeklyCalendar() {
       .sort((a, b) => a.dayOfWeek - b.dayOfWeek);
   }, [operatingDays]);
 
+  // Index: slotId -> slot object
+  const slotById = useMemo(() => {
+    if (!allTimeSlots) return {};
+    const map: Record<string, (typeof allTimeSlots)[number]> = {};
+    for (const slot of allTimeSlots) {
+      map[slot._id] = slot;
+    }
+    return map;
+  }, [allTimeSlots]);
+
+  // Group slots by day
   const slotsByDay = useMemo(() => {
     if (!allTimeSlots) return {};
     const grouped: Record<number, typeof allTimeSlots> = {};
@@ -26,12 +37,46 @@ export function WeeklyCalendar() {
       if (!grouped[slot.dayOfWeek]) grouped[slot.dayOfWeek] = [];
       grouped[slot.dayOfWeek]!.push(slot);
     }
-    for (const day in grouped) {
-      grouped[Number(day)]!.sort((a, b) => a.slotIndex - b.slotIndex);
-    }
     return grouped;
   }, [allTimeSlots]);
 
+  // Build unified time rows from all days' slots, sorted by startTime then endTime
+  // Each unique "startTime-endTime" combination becomes one row
+  const timeRows = useMemo(() => {
+    if (!allTimeSlots) return [];
+    const seen = new Set<string>();
+    const rows: { startTime: string; endTime: string; key: string }[] = [];
+
+    // Collect from all active days in order
+    const allSlotsSorted = [...allTimeSlots].sort((a, b) => {
+      const cmp = a.startTime.localeCompare(b.startTime);
+      if (cmp !== 0) return cmp;
+      return a.endTime.localeCompare(b.endTime);
+    });
+
+    for (const slot of allSlotsSorted) {
+      const key = `${slot.startTime}-${slot.endTime}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        rows.push({ startTime: slot.startTime, endTime: slot.endTime, key });
+      }
+    }
+
+    return rows;
+  }, [allTimeSlots]);
+
+  // For each day, build a map: "startTime-endTime" -> slot
+  const slotByDayAndTime = useMemo(() => {
+    if (!allTimeSlots) return {};
+    const map: Record<string, (typeof allTimeSlots)[number]> = {};
+    for (const slot of allTimeSlots) {
+      const key = `${slot.dayOfWeek}-${slot.startTime}-${slot.endTime}`;
+      map[key] = slot;
+    }
+    return map;
+  }, [allTimeSlots]);
+
+  // Group entries by day + timeSlotId
   const entriesByDayAndSlot = useMemo(() => {
     if (!allEntries) return {};
     const grouped: Record<string, typeof allEntries> = {};
@@ -42,15 +87,6 @@ export function WeeklyCalendar() {
     }
     return grouped;
   }, [allEntries]);
-
-  const maxSlots = useMemo(() => {
-    let max = 0;
-    for (const day of activeDays) {
-      const count = slotsByDay[day.dayOfWeek]?.length ?? 0;
-      if (count > max) max = count;
-    }
-    return max;
-  }, [activeDays, slotsByDay]);
 
   if (!operatingDays || !allEntries || !allTimeSlots) {
     return (
@@ -75,7 +111,6 @@ export function WeeklyCalendar() {
     return `rgba(${r}, ${g}, ${b}, ${alpha})`;
   }
 
-  // Build all grid cells as a flat array with explicit keys
   const today = new Date().getDay();
   const cells: ReactNode[] = [];
 
@@ -101,57 +136,47 @@ export function WeeklyCalendar() {
     );
   }
 
-  // Slot rows
-  for (let slotIdx = 0; slotIdx < maxSlots; slotIdx++) {
-    // Time label cell — use first active day that has this slot
-    let timeLabel: ReactNode = null;
-    for (const day of activeDays) {
-      const slots = slotsByDay[day.dayOfWeek];
-      if (slots && slots[slotIdx]) {
-        timeLabel = (
-          <>
-            <span className="text-[10px] font-semibold text-[#2D3748] leading-tight">
-              {formatTime(slots[slotIdx]!.startTime)}
-            </span>
-            <span className="text-[9px] text-[#A0AEC0] leading-tight">
-              {formatTime(slots[slotIdx]!.endTime)}
-            </span>
-          </>
-        );
-        break;
-      }
-    }
+  // Time-based rows — each row is a unique startTime-endTime pair
+  for (let rowIdx = 0; rowIdx < timeRows.length; rowIdx++) {
+    const row = timeRows[rowIdx]!;
 
+    // Time label cell
     cells.push(
       <div
-        key={`t-${slotIdx}`}
+        key={`t-${row.key}`}
         className="bg-white p-1.5 flex flex-col items-center justify-center border-t border-[#EDF2F7]"
       >
-        {timeLabel}
+        <span className="text-[10px] font-semibold text-[#2D3748] leading-tight">
+          {formatTime(row.startTime)}
+        </span>
+        <span className="text-[9px] text-[#A0AEC0] leading-tight">
+          {formatTime(row.endTime)}
+        </span>
       </div>
     );
 
     // Day cells
     for (const day of activeDays) {
-      const daySlots = slotsByDay[day.dayOfWeek];
-      const slot = daySlots?.[slotIdx];
+      const lookupKey = `${day.dayOfWeek}-${row.startTime}-${row.endTime}`;
+      const slot = slotByDayAndTime[lookupKey];
 
       if (!slot) {
+        // This day has no slot at this time range
         cells.push(
           <div
-            key={`c-${slotIdx}-${day.dayOfWeek}`}
+            key={`c-${row.key}-${day.dayOfWeek}`}
             className="bg-white p-1 border-t border-[#EDF2F7]"
           />
         );
         continue;
       }
 
-      const lookupKey = `${day.dayOfWeek}-${slot._id}`;
-      const entries = entriesByDayAndSlot[lookupKey] ?? [];
+      const entryKey = `${day.dayOfWeek}-${slot._id}`;
+      const entries = entriesByDayAndSlot[entryKey] ?? [];
 
       cells.push(
         <div
-          key={`c-${slotIdx}-${day.dayOfWeek}`}
+          key={`c-${row.key}-${day.dayOfWeek}`}
           className="bg-white p-1 border-t border-[#EDF2F7] min-h-[52px]"
         >
           {entries.length === 0 ? (
@@ -205,7 +230,7 @@ export function WeeklyCalendar() {
         {cells}
       </div>
 
-      {maxSlots === 0 && (
+      {timeRows.length === 0 && (
         <div className="text-center py-8 text-[#A0AEC0]">
           No time slots configured
         </div>
