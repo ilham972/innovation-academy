@@ -304,17 +304,10 @@ export function WeeklyCalendar() {
                           >
                             {entry.subject?.name}
                           </div>
-                          {entryHeight > 30 && (
-                            <div className="text-[8px] text-[#64748B] leading-tight truncate">
-                              {entry.grade?.name}
-                            </div>
-                          )}
+                          <div className="text-[8px] text-[#64748B] leading-tight truncate">
+                            {entry.grade?.name} · {entry.teacher?.name}
+                          </div>
                           {entryHeight > 42 && (
-                            <div className="text-[8px] text-[#94A3B8] leading-tight truncate">
-                              {entry.teacher?.name}
-                            </div>
-                          )}
-                          {entryHeight > 54 && (
                             <div className="text-[7px] text-[#94A3B8] leading-tight truncate">
                               {entry.room?.name}
                             </div>

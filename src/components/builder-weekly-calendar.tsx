@@ -143,17 +143,10 @@ function EntryBlock({
       >
         {entry.subject?.name}
       </div>
-      {height > 30 && (
-        <div className="text-[8px] text-[#64748B] leading-tight truncate">
-          {entry.grade?.name}
-        </div>
-      )}
+      <div className="text-[8px] text-[#64748B] leading-tight truncate">
+        {entry.grade?.name} · {entry.teacher?.name}
+      </div>
       {height > 42 && (
-        <div className="text-[8px] text-[#94A3B8] leading-tight truncate">
-          {entry.teacher?.name}
-        </div>
-      )}
-      {height > 54 && (
         <div className="text-[7px] text-[#94A3B8] leading-tight truncate">
           {entry.room?.name}
         </div>
