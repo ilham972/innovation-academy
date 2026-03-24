@@ -30,9 +30,11 @@ import {
   Edit2,
   AlertTriangle,
   Loader2,
+  Copy,
+  Check,
 } from "lucide-react";
 import Link from "next/link";
-import { DAY_SHORT_NAMES, formatTime } from "@/lib/days";
+import { DAY_NAMES, DAY_SHORT_NAMES, formatTime } from "@/lib/days";
 import { toast } from "sonner";
 import { BuilderWeeklyCalendar } from "@/components/builder-weekly-calendar";
 
@@ -103,6 +105,9 @@ export default function TimetableBuilderPage() {
   const [formTeacher, setFormTeacher] = useState("");
   const [formRoom, setFormRoom] = useState("");
   const [formNotes, setFormNotes] = useState("");
+
+  // Copy state
+  const [copied, setCopied] = useState(false);
 
   // Drag state
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
@@ -333,6 +338,85 @@ export default function TimetableBuilderPage() {
     return grouped;
   };
 
+  // ---------- Copy Timetable ----------
+  const copyTimetable = useCallback(() => {
+    if (!allEntries || !allTimeSlots || !activeDays.length) return;
+
+    // Filter time slots to session time range
+    const sessionDayNums = activeDays.map((d) => d.dayOfWeek);
+    const relevantSlots = allTimeSlots
+      .filter((s) => sessionDayNums.includes(s.dayOfWeek))
+      .filter((s) => {
+        if (!activeSession) return true;
+        const toMin = (t: string) => { const [h, m] = t.split(":").map(Number); return h! * 60 + m!; };
+        return toMin(s.startTime) >= toMin(activeSession.startTime) && toMin(s.endTime) <= toMin(activeSession.endTime);
+      });
+
+    // Get unique time ranges across days, sorted
+    const timeRanges = [...new Set(relevantSlots.map((s) => `${s.startTime}|${s.endTime}`))]
+      .sort()
+      .map((r) => { const [s, e] = r.split("|"); return { startTime: s!, endTime: e! }; });
+
+    // Build lookup: day+startTime+endTime → entries
+    const slotIdToSlot: Record<string, any> = {};
+    for (const s of allTimeSlots) slotIdToSlot[s._id] = s;
+
+    const entryLookup: Record<string, any[]> = {};
+    for (const entry of allEntries) {
+      const slot = slotIdToSlot[entry.timeSlotId];
+      if (!slot) continue;
+      const key = `${entry.dayOfWeek}|${slot.startTime}|${slot.endTime}`;
+      if (!entryLookup[key]) entryLookup[key] = [];
+      entryLookup[key]!.push(entry);
+    }
+
+    const sessionLabel = activeSession?.name ?? "Full";
+    const lines: string[] = [];
+
+    lines.push(`*📚 TIMETABLE — ${sessionLabel}*`);
+    lines.push("");
+
+    for (const day of activeDays) {
+      const dayName = DAY_NAMES[day.dayOfWeek] ?? "Unknown";
+      lines.push(`*📅 ${dayName}*`);
+
+      let hasEntries = false;
+
+      for (const range of timeRanges) {
+        const key = `${day.dayOfWeek}|${range.startTime}|${range.endTime}`;
+        const entries = entryLookup[key];
+        if (!entries || entries.length === 0) continue;
+
+        hasEntries = true;
+        const time = `${formatTime(range.startTime)} – ${formatTime(range.endTime)}`;
+        lines.push(`⏰ ${time}`);
+
+        for (const entry of entries) {
+          const subject = entry.subject?.name ?? "—";
+          const grade = entry.grade?.name ?? "—";
+          const teacher = entry.teacher?.name ?? "—";
+          const room = entry.room?.name ?? "";
+          const roomPart = room ? ` | 🏠 ${room}` : "";
+          lines.push(`    📖 ${subject} — Grade ${grade}`);
+          lines.push(`    👨‍🏫 ${teacher}${roomPart}`);
+        }
+        lines.push("");
+      }
+
+      if (!hasEntries) {
+        lines.push("    _No classes_");
+        lines.push("");
+      }
+    }
+
+    const text = lines.join("\n").trim();
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      toast.success("Timetable copied! Paste it in WhatsApp");
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }, [allEntries, allTimeSlots, activeDays, activeSession]);
+
   // ---------- Loading ----------
   const isLoading =
     !operatingDays ||
@@ -369,9 +453,22 @@ export default function TimetableBuilderPage() {
         <Link href="/settings" className="p-1">
           <ArrowLeft className="h-5 w-5 text-[#4A5568]" />
         </Link>
-        <h2 className="text-xl font-bold text-[#1A2B3D]">
+        <h2 className="text-xl font-bold text-[#1A2B3D] flex-1">
           Timetable Builder
         </h2>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={copyTimetable}
+          className="gap-1.5"
+        >
+          {copied ? (
+            <Check className="h-4 w-4 text-green-500" />
+          ) : (
+            <Copy className="h-4 w-4" />
+          )}
+          {copied ? "Copied!" : "Copy"}
+        </Button>
       </div>
 
       {/* View mode toggle */}
