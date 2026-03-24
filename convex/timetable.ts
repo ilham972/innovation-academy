@@ -231,6 +231,20 @@ export const update = mutation({
   },
 });
 
+export const reschedule = mutation({
+  args: {
+    id: v.id("timetableEntries"),
+    dayOfWeek: v.number(),
+    timeSlotId: v.id("timeSlots"),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.id, {
+      dayOfWeek: args.dayOfWeek,
+      timeSlotId: args.timeSlotId,
+    });
+  },
+});
+
 export const remove = mutation({
   args: { id: v.id("timetableEntries") },
   handler: async (ctx, args) => {

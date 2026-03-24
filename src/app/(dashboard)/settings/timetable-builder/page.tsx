@@ -2,38 +2,111 @@
 
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
-import { useState } from "react";
+import { useState, useMemo, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from "@/components/ui/sheet";
+import {
+  DndContext,
+  DragOverlay,
+  useSensor,
+  useSensors,
+  MouseSensor,
+  TouchSensor,
+  closestCenter,
+  useDraggable,
+} from "@dnd-kit/core";
+import type { DragStartEvent, DragEndEvent } from "@dnd-kit/core";
 import {
   ArrowLeft,
   Plus,
   Trash2,
   Edit2,
   AlertTriangle,
-  X,
+  Loader2,
+  GripVertical,
 } from "lucide-react";
 import Link from "next/link";
-import { DAY_SHORT_NAMES } from "@/lib/days";
-import { formatTime } from "@/lib/days";
+import { DAY_SHORT_NAMES, formatTime } from "@/lib/days";
 import { toast } from "sonner";
+import { BuilderWeeklyCalendar } from "@/components/builder-weekly-calendar";
 
-type ViewMode = "day" | "teacher" | "room" | "grade";
+type ViewMode = "week" | "day" | "teacher" | "room" | "grade";
 
+// ---------- Draggable "New Class" Chip ----------
+function NewClassChip() {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: "new-class",
+    data: { type: "new-class" },
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      {...listeners}
+      {...attributes}
+      className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-white font-medium text-sm shadow-md select-none ${
+        isDragging
+          ? "opacity-40 cursor-grabbing"
+          : "cursor-grab hover:shadow-lg active:cursor-grabbing"
+      }`}
+    >
+      <Plus className="h-4 w-4" />
+      <span>New Class</span>
+      <GripVertical className="h-3.5 w-3.5 opacity-60" />
+    </div>
+  );
+}
+
+// ---------- Drag Overlay Preview ----------
+function EntryDragPreview({ entry }: { entry: any }) {
+  const color = entry.subject?.color ?? "#94a3b8";
+  return (
+    <div
+      className="px-3 py-2 rounded-lg border-l-[3px] bg-white shadow-2xl max-w-[160px]"
+      style={{ borderLeftColor: color }}
+    >
+      <div
+        className="text-xs font-bold truncate"
+        style={{ color }}
+      >
+        {entry.subject?.name}
+      </div>
+      <div className="text-[10px] text-[#64748B] truncate">
+        {entry.grade?.name}
+      </div>
+      <div className="text-[10px] text-[#94A3B8] truncate">
+        {entry.teacher?.name}
+      </div>
+    </div>
+  );
+}
+
+// ---------- Main Page ----------
 export default function TimetableBuilderPage() {
+  // Data queries
   const operatingDays = useQuery(api.operatingDays.getAll);
+  const allEntries = useQuery(api.timetable.getAll);
+  const allTimeSlots = useQuery(api.timeSlots.getAll);
   const grades = useQuery(api.grades.getActive);
   const subjects = useQuery(api.subjects.getActive);
   const teachers = useQuery(api.teachers.getActive);
   const rooms = useQuery(api.rooms.getActive);
 
+  // UI state
+  const [viewMode, setViewMode] = useState<ViewMode>("week");
   const [selectedDay, setSelectedDay] = useState<number>(1);
-  const [viewMode, setViewMode] = useState<ViewMode>("day");
-  const [selectedFilterId, setSelectedFilterId] = useState<string>("");
+  const [selectedFilterId, setSelectedFilterId] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [editingEntry, setEditingEntry] = useState<any>(null);
-  const [selectedSlotId, setSelectedSlotId] = useState<string>("");
+  const [selectedSlotId, setSelectedSlotId] = useState("");
 
   // Form fields
   const [formGrade, setFormGrade] = useState("");
@@ -42,27 +115,12 @@ export default function TimetableBuilderPage() {
   const [formRoom, setFormRoom] = useState("");
   const [formNotes, setFormNotes] = useState("");
 
-  const timeSlots = useQuery(api.timeSlots.getByDay, { dayOfWeek: selectedDay });
-  const dayEntries = useQuery(api.timetable.getByDay, { dayOfWeek: selectedDay });
-  const teacherEntries = useQuery(
-    api.timetable.getByTeacher,
-    selectedFilterId && viewMode === "teacher"
-      ? { teacherId: selectedFilterId as any }
-      : "skip"
-  );
-  const roomEntries = useQuery(
-    api.timetable.getByRoom,
-    selectedFilterId && viewMode === "room"
-      ? { roomId: selectedFilterId as any }
-      : "skip"
-  );
-  const gradeEntries = useQuery(
-    api.timetable.getByGrade,
-    selectedFilterId && viewMode === "grade"
-      ? { gradeId: selectedFilterId as any }
-      : "skip"
-  );
+  // Drag state
+  const [activeDragId, setActiveDragId] = useState<string | null>(null);
+  const [isDragActive, setIsDragActive] = useState(false);
+  const justDragged = useRef(false);
 
+  // Conflict check query
   const conflicts = useQuery(
     api.timetable.checkConflicts,
     showForm && selectedSlotId && formTeacher && formRoom
@@ -76,15 +134,55 @@ export default function TimetableBuilderPage() {
       : "skip"
   );
 
+  // Mutations
   const createEntry = useMutation(api.timetable.create);
   const updateEntry = useMutation(api.timetable.update);
   const removeEntry = useMutation(api.timetable.remove);
+  const rescheduleEntry = useMutation(api.timetable.reschedule);
 
-  const activeDays = operatingDays
-    ? [...operatingDays].filter((d) => d.isActive).sort((a, b) => a.dayOfWeek - b.dayOfWeek)
-    : [];
+  // DnD sensors
+  const mouseSensor = useSensor(MouseSensor, {
+    activationConstraint: { distance: 8 },
+  });
+  const touchSensor = useSensor(TouchSensor, {
+    activationConstraint: { delay: 300, tolerance: 8 },
+  });
+  const sensors = useSensors(mouseSensor, touchSensor);
 
-  const openAddForm = (slotId: string) => {
+  // Derived data
+  const activeDays = useMemo(() => {
+    if (!operatingDays) return [];
+    return [...operatingDays]
+      .filter((d) => d.isActive)
+      .sort((a, b) => a.dayOfWeek - b.dayOfWeek);
+  }, [operatingDays]);
+
+  const dayEntries = useMemo(() => {
+    if (!allEntries) return [];
+    return allEntries.filter((e) => e.dayOfWeek === selectedDay);
+  }, [allEntries, selectedDay]);
+
+  const dayTimeSlots = useMemo(() => {
+    if (!allTimeSlots) return [];
+    return allTimeSlots
+      .filter((s) => s.dayOfWeek === selectedDay)
+      .sort((a, b) => a.slotIndex - b.slotIndex);
+  }, [allTimeSlots, selectedDay]);
+
+  const selectedSlotInfo = useMemo(() => {
+    if (!allTimeSlots || !selectedSlotId) return null;
+    return allTimeSlots.find((s) => s._id === selectedSlotId);
+  }, [allTimeSlots, selectedSlotId]);
+
+  const activeDragEntry = useMemo(() => {
+    if (!activeDragId || activeDragId === "new-class" || !allEntries)
+      return null;
+    return allEntries.find((e) => e._id === activeDragId) ?? null;
+  }, [activeDragId, allEntries]);
+
+  // ---------- Form Handlers ----------
+  const openAddForm = (dayOfWeek: number, slotId: string) => {
+    setSelectedDay(dayOfWeek);
     setSelectedSlotId(slotId);
     setEditingEntry(null);
     setFormGrade("");
@@ -96,6 +194,7 @@ export default function TimetableBuilderPage() {
   };
 
   const openEditForm = (entry: any) => {
+    setSelectedDay(entry.dayOfWeek);
     setSelectedSlotId(entry.timeSlotId);
     setEditingEntry(entry);
     setFormGrade(entry.gradeId);
@@ -104,6 +203,11 @@ export default function TimetableBuilderPage() {
     setFormRoom(entry.roomId);
     setFormNotes(entry.notes || "");
     setShowForm(true);
+  };
+
+  const closeForm = () => {
+    setShowForm(false);
+    setEditingEntry(null);
   };
 
   const handleSave = async () => {
@@ -134,69 +238,225 @@ export default function TimetableBuilderPage() {
         });
         toast.success("Class added");
       }
-      setShowForm(false);
+      closeForm();
     } catch (e: any) {
       toast.error(e.message);
     }
   };
 
-  const handleDelete = async (id: any) => {
-    await removeEntry({ id });
-    toast.success("Class removed");
-    setShowForm(false);
+  const handleDelete = async () => {
+    if (!editingEntry) return;
+    try {
+      await removeEntry({ id: editingEntry._id });
+      toast.success("Class removed");
+      closeForm();
+    } catch (e: any) {
+      toast.error(e.message);
+    }
   };
 
-  const getEntriesForSlot = (slotId: string) => {
-    return dayEntries?.filter((e) => e.timeSlotId === slotId) ?? [];
+  // ---------- DnD Handlers ----------
+  const handleDragStart = (event: DragStartEvent) => {
+    setActiveDragId(event.active.id as string);
+    setIsDragActive(true);
+    justDragged.current = true;
   };
 
-  // Read-only filtered view data
-  const getFilteredViewData = () => {
-    let data: any[] = [];
-    if (viewMode === "teacher" && teacherEntries) data = teacherEntries;
-    if (viewMode === "room" && roomEntries) data = roomEntries;
-    if (viewMode === "grade" && gradeEntries) data = gradeEntries;
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+    setActiveDragId(null);
+    setIsDragActive(false);
+    setTimeout(() => {
+      justDragged.current = false;
+    }, 200);
 
-    // Group by day
+    if (!over) return;
+
+    const dropId = over.id as string;
+    if (!dropId.startsWith("slot-")) return;
+
+    const dropData = over.data.current as {
+      dayOfWeek: number;
+      slotId: string;
+    };
+
+    if (active.id === "new-class") {
+      // Dragged "New Class" chip onto a slot → open add form
+      openAddForm(dropData.dayOfWeek, dropData.slotId);
+    } else {
+      // Dragged existing entry → reschedule
+      const entry = (active.data.current as any)?.entry;
+      if (!entry) return;
+
+      // No-op if dropped on same slot
+      if (
+        entry.dayOfWeek === dropData.dayOfWeek &&
+        entry.timeSlotId === dropData.slotId
+      )
+        return;
+
+      try {
+        await rescheduleEntry({
+          id: entry._id,
+          dayOfWeek: dropData.dayOfWeek,
+          timeSlotId: dropData.slotId as any,
+        });
+        toast.success(`Moved to ${DAY_SHORT_NAMES[dropData.dayOfWeek]}`);
+      } catch (e: any) {
+        toast.error(e.message);
+      }
+    }
+  };
+
+  const handleDragCancel = () => {
+    setActiveDragId(null);
+    setIsDragActive(false);
+    setTimeout(() => {
+      justDragged.current = false;
+    }, 200);
+  };
+
+  const shouldIgnoreClick = () => justDragged.current;
+
+  // ---------- Filter View Helpers ----------
+  const getGroupedFilteredEntries = () => {
+    if (!allEntries || !selectedFilterId) return {};
+    let filtered: any[] = [];
+    if (viewMode === "teacher")
+      filtered = allEntries.filter((e) => e.teacherId === selectedFilterId);
+    if (viewMode === "room")
+      filtered = allEntries.filter((e) => e.roomId === selectedFilterId);
+    if (viewMode === "grade")
+      filtered = allEntries.filter((e) => e.gradeId === selectedFilterId);
+
     const grouped: Record<number, any[]> = {};
-    data.forEach((entry) => {
+    filtered.forEach((entry) => {
       if (!grouped[entry.dayOfWeek]) grouped[entry.dayOfWeek] = [];
       grouped[entry.dayOfWeek]!.push(entry);
     });
     return grouped;
   };
 
+  // ---------- Loading ----------
+  const isLoading =
+    !operatingDays ||
+    !allEntries ||
+    !allTimeSlots ||
+    !grades ||
+    !subjects ||
+    !teachers ||
+    !rooms;
+
+  if (isLoading) {
+    return (
+      <div className="p-4">
+        <div className="flex items-center gap-2 mb-4">
+          <Link href="/settings" className="p-1">
+            <ArrowLeft className="h-5 w-5 text-[#4A5568]" />
+          </Link>
+          <h2 className="text-xl font-bold text-[#1A2B3D]">
+            Timetable Builder
+          </h2>
+        </div>
+        <div className="flex items-center justify-center h-48">
+          <Loader2 className="h-6 w-6 animate-spin text-primary" />
+        </div>
+      </div>
+    );
+  }
+
+  // ---------- Render ----------
   return (
-    <div className="p-4">
+    <div className="p-4 pb-24">
+      {/* Header */}
       <div className="flex items-center gap-2 mb-4">
         <Link href="/settings" className="p-1">
           <ArrowLeft className="h-5 w-5 text-[#4A5568]" />
         </Link>
-        <h2 className="text-xl font-bold text-[#1A2B3D]">Timetable Builder</h2>
+        <h2 className="text-xl font-bold text-[#1A2B3D]">
+          Timetable Builder
+        </h2>
       </div>
 
       {/* View mode toggle */}
       <div className="flex gap-1 mb-4 overflow-x-auto pb-1">
-        {(["day", "teacher", "room", "grade"] as ViewMode[]).map((mode) => (
-          <button
-            key={mode}
-            onClick={() => {
-              setViewMode(mode);
-              setSelectedFilterId("");
-              setShowForm(false);
-            }}
-            className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap ${
-              viewMode === mode
-                ? "bg-primary text-primary-foreground"
-                : "bg-white text-[#4A5568] border border-[#E2E8F0]"
-            }`}
-          >
-            By {mode.charAt(0).toUpperCase() + mode.slice(1)}
-          </button>
-        ))}
+        {(["week", "day", "teacher", "room", "grade"] as ViewMode[]).map(
+          (mode) => (
+            <button
+              key={mode}
+              onClick={() => {
+                setViewMode(mode);
+                setSelectedFilterId("");
+                setShowForm(false);
+              }}
+              className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap ${
+                viewMode === mode
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-white text-[#4A5568] border border-[#E2E8F0]"
+              }`}
+            >
+              {mode === "week"
+                ? "Week"
+                : mode === "day"
+                  ? "Day"
+                  : `By ${mode.charAt(0).toUpperCase() + mode.slice(1)}`}
+            </button>
+          )
+        )}
       </div>
 
-      {viewMode === "day" ? (
+      {/* ==================== WEEK VIEW ==================== */}
+      {viewMode === "week" && (
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragStart={handleDragStart}
+          onDragEnd={handleDragEnd}
+          onDragCancel={handleDragCancel}
+        >
+          {/* Drag source + helper text */}
+          <div className="flex items-center gap-3 mb-3">
+            <NewClassChip />
+            <span className="text-[11px] text-[#A0AEC0] leading-tight">
+              Drag onto calendar
+              <br />
+              or tap empty slots
+            </span>
+          </div>
+
+          {/* Interactive calendar */}
+          <BuilderWeeklyCalendar
+            operatingDays={activeDays}
+            allEntries={allEntries}
+            allTimeSlots={allTimeSlots}
+            onSlotClick={openAddForm}
+            onEntryClick={openEditForm}
+            activeSlotKey={
+              showForm ? `${selectedDay}-${selectedSlotId}` : undefined
+            }
+            activeEntryId={
+              showForm && editingEntry ? editingEntry._id : undefined
+            }
+            shouldIgnoreClick={shouldIgnoreClick}
+            isDragHappening={isDragActive}
+          />
+
+          {/* Drag overlay */}
+          <DragOverlay dropAnimation={null}>
+            {activeDragId === "new-class" ? (
+              <div className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-white font-medium text-sm shadow-2xl">
+                <Plus className="h-4 w-4" />
+                New Class
+              </div>
+            ) : activeDragEntry ? (
+              <EntryDragPreview entry={activeDragEntry} />
+            ) : null}
+          </DragOverlay>
+        </DndContext>
+      )}
+
+      {/* ==================== DAY VIEW ==================== */}
+      {viewMode === "day" && (
         <>
           {/* Day selector */}
           <div className="flex gap-2 mb-4 overflow-x-auto pb-2">
@@ -218,143 +478,21 @@ export default function TimetableBuilderPage() {
             ))}
           </div>
 
-          {/* Entry form modal */}
-          {showForm && (
-            <div className="bg-white rounded-2xl p-4 shadow-md border border-primary/20 mb-4">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="font-bold text-[#1A2B3D]">
-                  {editingEntry ? "Edit Class" : "Add Class"}
-                </h3>
-                <button onClick={() => setShowForm(false)}>
-                  <X className="h-5 w-5 text-[#A0AEC0]" />
-                </button>
-              </div>
-
-              {/* Conflict warnings */}
-              {conflicts && conflicts.length > 0 && (
-                <div className="mb-3 space-y-1">
-                  {conflicts.map((warning, i) => (
-                    <div
-                      key={i}
-                      className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 text-sm text-amber-700"
-                    >
-                      <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
-                      {warning}
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              <div className="space-y-3">
-                <div>
-                  <Label>Grade</Label>
-                  <select
-                    value={formGrade}
-                    onChange={(e) => setFormGrade(e.target.value)}
-                    className="w-full border border-[#E2E8F0] rounded-xl px-3 py-2 text-sm bg-white"
-                  >
-                    <option value="">Select grade...</option>
-                    {grades?.map((g) => (
-                      <option key={g._id} value={g._id}>
-                        {g.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <Label>Subject</Label>
-                  <select
-                    value={formSubject}
-                    onChange={(e) => setFormSubject(e.target.value)}
-                    className="w-full border border-[#E2E8F0] rounded-xl px-3 py-2 text-sm bg-white"
-                  >
-                    <option value="">Select subject...</option>
-                    {subjects?.map((s) => (
-                      <option key={s._id} value={s._id}>
-                        {s.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <Label>Teacher</Label>
-                  <select
-                    value={formTeacher}
-                    onChange={(e) => setFormTeacher(e.target.value)}
-                    className="w-full border border-[#E2E8F0] rounded-xl px-3 py-2 text-sm bg-white"
-                  >
-                    <option value="">Select teacher...</option>
-                    {teachers?.map((t) => {
-                      const teachesSelected =
-                        formSubject && t.subjects.includes(formSubject as any);
-                      return (
-                        <option key={t._id} value={t._id}>
-                          {t.name}
-                          {teachesSelected ? " *" : ""}
-                        </option>
-                      );
-                    })}
-                  </select>
-                  {formSubject && (
-                    <p className="text-xs text-[#A0AEC0] mt-1">
-                      * = teaches the selected subject
-                    </p>
-                  )}
-                </div>
-                <div>
-                  <Label>Room</Label>
-                  <select
-                    value={formRoom}
-                    onChange={(e) => setFormRoom(e.target.value)}
-                    className="w-full border border-[#E2E8F0] rounded-xl px-3 py-2 text-sm bg-white"
-                  >
-                    <option value="">Select room...</option>
-                    {rooms?.map((r) => (
-                      <option key={r._id} value={r._id}>
-                        {r.name}
-                        {r.capacity ? ` (Cap: ${r.capacity})` : ""}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <Label>Notes (optional)</Label>
-                  <Textarea
-                    value={formNotes}
-                    onChange={(e) => setFormNotes(e.target.value)}
-                    placeholder="Any special notes..."
-                    rows={2}
-                  />
-                </div>
-                <div className="flex gap-2">
-                  <Button
-                    onClick={handleSave}
-                    className="flex-1"
-                  >
-                    {editingEntry ? "Update" : "Add Class"}
-                  </Button>
-                  {editingEntry && (
-                    <Button
-                      variant="destructive"
-                      onClick={() => handleDelete(editingEntry._id)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Slots with entries */}
+          {/* Slot list */}
           <div className="space-y-3">
-            {timeSlots?.map((slot) => {
-              const entries = getEntriesForSlot(slot._id);
+            {dayTimeSlots.map((slot) => {
+              const entries = dayEntries.filter(
+                (e) => e.timeSlotId === slot._id
+              );
               return (
-                <div key={slot._id} className="bg-white rounded-2xl shadow-[0_2px_12px_rgba(0,0,0,0.06)] overflow-hidden">
+                <div
+                  key={slot._id}
+                  className="bg-white rounded-2xl shadow-[0_2px_12px_rgba(0,0,0,0.06)] overflow-hidden"
+                >
                   <div className="bg-[#F5F7FA] px-4 py-2 border-b border-[#EDF2F7]">
                     <span className="font-medium text-[#2D3748] text-sm">
-                      {formatTime(slot.startTime)} - {formatTime(slot.endTime)}
+                      {formatTime(slot.startTime)} -{" "}
+                      {formatTime(slot.endTime)}
                     </span>
                     {slot.label && (
                       <span className="text-xs text-[#A0AEC0] ml-2">
@@ -372,7 +510,8 @@ export default function TimetableBuilderPage() {
                         <div
                           className="w-1 h-10 rounded-full flex-shrink-0"
                           style={{
-                            backgroundColor: entry.subject?.color ?? "#94a3b8",
+                            backgroundColor:
+                              entry.subject?.color ?? "#94a3b8",
                           }}
                         />
                         <div className="flex-1 min-w-0">
@@ -380,7 +519,8 @@ export default function TimetableBuilderPage() {
                             {entry.grade?.name} - {entry.subject?.name}
                           </div>
                           <div className="text-xs text-[#8494A7]">
-                            {entry.teacher?.name} &middot; {entry.room?.name}
+                            {entry.teacher?.name} &middot;{" "}
+                            {entry.room?.name}
                           </div>
                         </div>
                         <Edit2 className="h-4 w-4 text-[#CBD5E0] flex-shrink-0" />
@@ -394,7 +534,7 @@ export default function TimetableBuilderPage() {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => openAddForm(slot._id)}
+                      onClick={() => openAddForm(selectedDay, slot._id)}
                       className="w-full border-dashed"
                     >
                       <Plus className="h-4 w-4 mr-1" />
@@ -405,7 +545,7 @@ export default function TimetableBuilderPage() {
               );
             })}
 
-            {(!timeSlots || timeSlots.length === 0) && (
+            {dayTimeSlots.length === 0 && (
               <div className="text-center py-8 text-[#A0AEC0]">
                 <p>No time slots configured for this day.</p>
                 <Link
@@ -418,8 +558,12 @@ export default function TimetableBuilderPage() {
             )}
           </div>
         </>
-      ) : (
-        /* Filtered views (by teacher/room/grade) */
+      )}
+
+      {/* ==================== FILTER VIEWS ==================== */}
+      {(viewMode === "teacher" ||
+        viewMode === "room" ||
+        viewMode === "grade") && (
         <div>
           <div className="mb-4">
             <select
@@ -427,9 +571,7 @@ export default function TimetableBuilderPage() {
               onChange={(e) => setSelectedFilterId(e.target.value)}
               className="w-full border border-[#E2E8F0] rounded-xl px-3 py-2 text-sm bg-white"
             >
-              <option value="">
-                Select {viewMode}...
-              </option>
+              <option value="">Select {viewMode}...</option>
               {viewMode === "teacher" &&
                 teachers?.map((t) => (
                   <option key={t._id} value={t._id}>
@@ -453,7 +595,7 @@ export default function TimetableBuilderPage() {
 
           {selectedFilterId && (
             <div className="space-y-4">
-              {Object.entries(getFilteredViewData())
+              {Object.entries(getGroupedFilteredEntries())
                 .sort(([a], [b]) => Number(a) - Number(b))
                 .map(([dayStr, entries]) => (
                   <div key={dayStr}>
@@ -468,9 +610,10 @@ export default function TimetableBuilderPage() {
                           )
                         )
                         .map((entry: any) => (
-                          <div
+                          <button
                             key={entry._id}
-                            className="bg-white rounded-2xl p-3 shadow-[0_2px_12px_rgba(0,0,0,0.06)] flex items-center gap-3"
+                            onClick={() => openEditForm(entry)}
+                            className="w-full text-left bg-white rounded-2xl p-3 shadow-[0_2px_12px_rgba(0,0,0,0.06)] flex items-center gap-3 hover:bg-[#F5F7FA] transition-colors"
                           >
                             <div
                               className="w-1 h-10 rounded-full flex-shrink-0"
@@ -491,13 +634,14 @@ export default function TimetableBuilderPage() {
                                 {entry.room?.name}
                               </div>
                             </div>
-                          </div>
+                            <Edit2 className="h-4 w-4 text-[#CBD5E0] flex-shrink-0" />
+                          </button>
                         ))}
                     </div>
                   </div>
                 ))}
 
-              {Object.keys(getFilteredViewData()).length === 0 && (
+              {Object.keys(getGroupedFilteredEntries()).length === 0 && (
                 <div className="text-center py-8 text-[#A0AEC0]">
                   No classes found
                 </div>
@@ -506,6 +650,168 @@ export default function TimetableBuilderPage() {
           )}
         </div>
       )}
+
+      {/* ==================== BOTTOM SHEET FORM ==================== */}
+      <Sheet
+        open={showForm}
+        onOpenChange={(open) => {
+          if (!open) closeForm();
+        }}
+      >
+        <SheetContent
+          side="bottom"
+          className="rounded-t-2xl max-h-[85vh]"
+        >
+          {/* Drag handle */}
+          <div className="flex justify-center pt-1 -mb-2">
+            <div className="w-10 h-1 rounded-full bg-[#D1D5DB]" />
+          </div>
+
+          <SheetHeader>
+            <SheetTitle>
+              {editingEntry ? "Edit Class" : "Add Class"}
+            </SheetTitle>
+            <SheetDescription>
+              {DAY_SHORT_NAMES[selectedDay]}
+              {selectedSlotInfo &&
+                ` \u00B7 ${formatTime(selectedSlotInfo.startTime)} - ${formatTime(selectedSlotInfo.endTime)}`}
+              {selectedSlotInfo?.label &&
+                ` \u00B7 ${selectedSlotInfo.label}`}
+            </SheetDescription>
+          </SheetHeader>
+
+          <div className="overflow-y-auto flex-1 min-h-0 px-4 pb-6 space-y-4">
+            {/* Conflict warnings */}
+            {conflicts && conflicts.length > 0 && (
+              <div className="space-y-1">
+                {conflicts.map((warning, i) => (
+                  <div
+                    key={i}
+                    className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 text-sm text-amber-700"
+                  >
+                    <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                    {warning}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Grade */}
+            <div>
+              <Label className="text-xs font-medium text-[#4A5568]">
+                Grade
+              </Label>
+              <select
+                value={formGrade}
+                onChange={(e) => setFormGrade(e.target.value)}
+                className="w-full border border-[#E2E8F0] rounded-xl px-3 py-2.5 text-sm bg-white mt-1"
+              >
+                <option value="">Select grade...</option>
+                {grades?.map((g) => (
+                  <option key={g._id} value={g._id}>
+                    {g.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Subject */}
+            <div>
+              <Label className="text-xs font-medium text-[#4A5568]">
+                Subject
+              </Label>
+              <select
+                value={formSubject}
+                onChange={(e) => setFormSubject(e.target.value)}
+                className="w-full border border-[#E2E8F0] rounded-xl px-3 py-2.5 text-sm bg-white mt-1"
+              >
+                <option value="">Select subject...</option>
+                {subjects?.map((s) => (
+                  <option key={s._id} value={s._id}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Teacher */}
+            <div>
+              <Label className="text-xs font-medium text-[#4A5568]">
+                Teacher
+              </Label>
+              <select
+                value={formTeacher}
+                onChange={(e) => setFormTeacher(e.target.value)}
+                className="w-full border border-[#E2E8F0] rounded-xl px-3 py-2.5 text-sm bg-white mt-1"
+              >
+                <option value="">Select teacher...</option>
+                {teachers?.map((t) => {
+                  const teachesSelected =
+                    formSubject &&
+                    t.subjects.includes(formSubject as any);
+                  return (
+                    <option key={t._id} value={t._id}>
+                      {t.name}
+                      {teachesSelected ? " *" : ""}
+                    </option>
+                  );
+                })}
+              </select>
+              {formSubject && (
+                <p className="text-xs text-[#A0AEC0] mt-1">
+                  * = teaches the selected subject
+                </p>
+              )}
+            </div>
+
+            {/* Room */}
+            <div>
+              <Label className="text-xs font-medium text-[#4A5568]">
+                Room
+              </Label>
+              <select
+                value={formRoom}
+                onChange={(e) => setFormRoom(e.target.value)}
+                className="w-full border border-[#E2E8F0] rounded-xl px-3 py-2.5 text-sm bg-white mt-1"
+              >
+                <option value="">Select room...</option>
+                {rooms?.map((r) => (
+                  <option key={r._id} value={r._id}>
+                    {r.name}
+                    {r.capacity ? ` (Cap: ${r.capacity})` : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Notes */}
+            <div>
+              <Label className="text-xs font-medium text-[#4A5568]">
+                Notes (optional)
+              </Label>
+              <Textarea
+                value={formNotes}
+                onChange={(e) => setFormNotes(e.target.value)}
+                placeholder="Any special notes..."
+                rows={2}
+                className="mt-1"
+              />
+            </div>
+
+            {/* Action buttons */}
+            <div className="flex gap-2 pt-2">
+              <Button onClick={handleSave} className="flex-1">
+                {editingEntry ? "Update Class" : "Add Class"}
+              </Button>
+              {editingEntry && (
+                <Button variant="destructive" onClick={handleDelete}>
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
+          </div>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
