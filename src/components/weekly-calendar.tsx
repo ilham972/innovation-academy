@@ -43,7 +43,7 @@ export function WeeklyCalendar() {
     }
   }, []);
 
-  const activeDays = useMemo(() => {
+  const allActiveDays = useMemo(() => {
     if (!operatingDays) return [];
     return [...operatingDays]
       .filter((d) => d.isActive)
@@ -56,6 +56,12 @@ export function WeeklyCalendar() {
     if (!selectedSessionId || selectedSessionId === "__all__") return null;
     return sessions.find((s) => s._id === selectedSessionId) ?? sessions[0]!;
   }, [sessions, selectedSessionId]);
+
+  // Filter days based on session's configured days
+  const activeDays = useMemo(() => {
+    if (!activeSession?.days || activeSession.days.length === 0) return allActiveDays;
+    return allActiveDays.filter((d) => activeSession.days!.includes(d.dayOfWeek));
+  }, [allActiveDays, activeSession]);
 
   const slotsByDay = useMemo(() => {
     if (!allTimeSlots) return {};

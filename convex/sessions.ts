@@ -24,6 +24,7 @@ export const create = mutation({
     name: v.string(),
     startTime: v.string(),
     endTime: v.string(),
+    days: v.optional(v.array(v.number())),
     sortOrder: v.number(),
   },
   handler: async (ctx, args) => {
@@ -40,6 +41,7 @@ export const update = mutation({
     name: v.string(),
     startTime: v.string(),
     endTime: v.string(),
+    days: v.optional(v.array(v.number())),
     sortOrder: v.number(),
     isActive: v.boolean(),
   },

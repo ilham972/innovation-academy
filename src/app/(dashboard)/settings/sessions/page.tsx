@@ -10,7 +10,7 @@ import { Switch } from "@/components/ui/switch";
 import { ArrowLeft, Plus, Trash2, Edit2, X, Check } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { formatTime } from "@/lib/days";
+import { formatTime, DAY_SHORT_NAMES } from "@/lib/days";
 
 export default function SessionsPage() {
   const sessions = useQuery(api.sessions.getAll);
@@ -18,13 +18,26 @@ export default function SessionsPage() {
   const updateSession = useMutation(api.sessions.update);
   const removeSession = useMutation(api.sessions.remove);
 
+  const operatingDays = useQuery(api.operatingDays.getAll);
+
   const [showAdd, setShowAdd] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [startTime, setStartTime] = useState("");
   const [endTime, setEndTime] = useState("");
+  const [selectedDays, setSelectedDays] = useState<number[]>([]);
   const [sortOrder, setSortOrder] = useState("0");
   const [isActive, setIsActive] = useState(true);
+
+  const activeDays = operatingDays
+    ? [...operatingDays].filter((d) => d.isActive).sort((a, b) => a.dayOfWeek - b.dayOfWeek)
+    : [];
+
+  const toggleDay = (day: number) => {
+    setSelectedDays((prev) =>
+      prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day].sort()
+    );
+  };
 
   const handleAdd = async () => {
     if (!name || !startTime || !endTime) {
@@ -35,12 +48,14 @@ export default function SessionsPage() {
       name,
       startTime,
       endTime,
+      days: selectedDays.length > 0 ? selectedDays : undefined,
       sortOrder: Number(sortOrder) || (sessions?.length ?? 0),
     });
     setShowAdd(false);
     setName("");
     setStartTime("");
     setEndTime("");
+    setSelectedDays([]);
     setSortOrder("0");
     toast.success("Session added");
   };
@@ -55,6 +70,7 @@ export default function SessionsPage() {
       name,
       startTime,
       endTime,
+      days: selectedDays.length > 0 ? selectedDays : undefined,
       sortOrder: Number(sortOrder),
       isActive,
     });
@@ -72,6 +88,7 @@ export default function SessionsPage() {
     setName(session.name);
     setStartTime(session.startTime);
     setEndTime(session.endTime);
+    setSelectedDays(session.days ?? []);
     setSortOrder(session.sortOrder.toString());
     setIsActive(session.isActive);
   };
@@ -125,6 +142,25 @@ export default function SessionsPage() {
                   </div>
                 </div>
                 <div>
+                  <Label>Days (leave empty for all days)</Label>
+                  <div className="flex flex-wrap gap-1.5 mt-1">
+                    {activeDays.map((d) => (
+                      <button
+                        key={d.dayOfWeek}
+                        type="button"
+                        onClick={() => toggleDay(d.dayOfWeek)}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-medium ${
+                          selectedDays.includes(d.dayOfWeek)
+                            ? "bg-primary text-white"
+                            : "bg-[#F0F4F8] text-[#4A5568]"
+                        }`}
+                      >
+                        {DAY_SHORT_NAMES[d.dayOfWeek]}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
                   <Label>Sort Order</Label>
                   <Input
                     type="number"
@@ -167,6 +203,11 @@ export default function SessionsPage() {
                     {formatTime(session.startTime)} -{" "}
                     {formatTime(session.endTime)}
                   </span>
+                  {session.days && session.days.length > 0 && (
+                    <span className="text-xs text-[#8494A7] ml-2">
+                      {session.days.map((d: number) => DAY_SHORT_NAMES[d]).join(", ")}
+                    </span>
+                  )}
                   {!session.isActive && (
                     <span className="text-xs bg-[#EDF2F7] text-[#8494A7] px-2 py-0.5 rounded ml-2">
                       Inactive
@@ -231,6 +272,25 @@ export default function SessionsPage() {
               />
             </div>
           </div>
+          <div>
+            <Label>Days (leave empty for all days)</Label>
+            <div className="flex flex-wrap gap-1.5 mt-1">
+              {activeDays.map((d) => (
+                <button
+                  key={d.dayOfWeek}
+                  type="button"
+                  onClick={() => toggleDay(d.dayOfWeek)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-medium ${
+                    selectedDays.includes(d.dayOfWeek)
+                      ? "bg-primary text-white"
+                      : "bg-[#F0F4F8] text-[#4A5568]"
+                  }`}
+                >
+                  {DAY_SHORT_NAMES[d.dayOfWeek]}
+                </button>
+              ))}
+            </div>
+          </div>
           <div className="flex gap-2">
             <Button onClick={handleAdd} className="flex-1">
               Add Session
@@ -251,6 +311,7 @@ export default function SessionsPage() {
             setName("");
             setStartTime("");
             setEndTime("");
+            setSelectedDays([]);
             setSortOrder((sessions?.length ?? 0).toString());
           }}
           className="w-full"

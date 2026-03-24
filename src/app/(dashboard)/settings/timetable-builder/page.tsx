@@ -139,12 +139,24 @@ export default function TimetableBuilderPage() {
   const sensors = useSensors(mouseSensor, touchSensor);
 
   // Derived data
-  const activeDays = useMemo(() => {
+  const allActiveDays = useMemo(() => {
     if (!operatingDays) return [];
     return [...operatingDays]
       .filter((d) => d.isActive)
       .sort((a, b) => a.dayOfWeek - b.dayOfWeek);
   }, [operatingDays]);
+
+  const activeSession = useMemo(() => {
+    if (!sessions || sessions.length === 0) return null;
+    if (!selectedSessionId || selectedSessionId === "__all__") return null;
+    return sessions.find((s) => s._id === selectedSessionId) ?? sessions[0]!;
+  }, [sessions, selectedSessionId]);
+
+  // Filter days based on session's configured days
+  const activeDays = useMemo(() => {
+    if (!activeSession?.days || activeSession.days.length === 0) return allActiveDays;
+    return allActiveDays.filter((d) => activeSession.days!.includes(d.dayOfWeek));
+  }, [allActiveDays, activeSession]);
 
   const dayEntries = useMemo(() => {
     if (!allEntries) return [];
@@ -162,12 +174,6 @@ export default function TimetableBuilderPage() {
     if (!allTimeSlots || !selectedSlotId) return null;
     return allTimeSlots.find((s) => s._id === selectedSlotId);
   }, [allTimeSlots, selectedSlotId]);
-
-  const activeSession = useMemo(() => {
-    if (!sessions || sessions.length === 0) return null;
-    if (!selectedSessionId || selectedSessionId === "__all__") return null;
-    return sessions.find((s) => s._id === selectedSessionId) ?? sessions[0]!;
-  }, [sessions, selectedSessionId]);
 
   const activeDragEntry = useMemo(() => {
     if (!activeDragId || activeDragId === "new-class" || !allEntries)
