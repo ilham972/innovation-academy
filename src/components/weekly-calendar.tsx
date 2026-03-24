@@ -281,20 +281,18 @@ export function WeeklyCalendar() {
                     return entries.map((entry, idx) => {
                       const color = entry.subject?.color ?? "#94a3b8";
                       const totalInSlot = entries.length;
-                      const widthPercent =
-                        totalInSlot > 1 ? 100 / totalInSlot : 100;
-                      const leftPercent =
-                        totalInSlot > 1 ? idx * widthPercent : 0;
+                      const entryHeight = height / totalInSlot;
+                      const entryTop = top + idx * entryHeight;
 
                       return (
                         <div
                           key={entry._id}
                           className="absolute rounded-md border-l-[3px] overflow-hidden px-1 py-0.5 transition-shadow hover:shadow-lg hover:z-20"
                           style={{
-                            top: top + 1,
-                            height: height - 2,
-                            left: `calc(${leftPercent}% + 1px)`,
-                            width: `calc(${widthPercent}% - 2px)`,
+                            top: entryTop + 1,
+                            height: entryHeight - 2,
+                            left: 1,
+                            right: 1,
                             borderLeftColor: color,
                             backgroundColor: hexToRgba(color, 0.12),
                             zIndex: 10,
@@ -306,17 +304,17 @@ export function WeeklyCalendar() {
                           >
                             {entry.subject?.name}
                           </div>
-                          {height > 30 && (
+                          {entryHeight > 30 && (
                             <div className="text-[8px] text-[#64748B] leading-tight truncate">
                               {entry.grade?.name}
                             </div>
                           )}
-                          {height > 42 && (
+                          {entryHeight > 42 && (
                             <div className="text-[8px] text-[#94A3B8] leading-tight truncate">
                               {entry.teacher?.name}
                             </div>
                           )}
-                          {height > 54 && (
+                          {entryHeight > 54 && (
                             <div className="text-[7px] text-[#94A3B8] leading-tight truncate">
                               {entry.room?.name}
                             </div>

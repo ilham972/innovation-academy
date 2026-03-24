@@ -387,19 +387,17 @@ export function BuilderWeeklyCalendar({
 
                   return entries.map((entry: any, idx: number) => {
                     const totalInSlot = entries.length;
-                    const widthPercent =
-                      totalInSlot > 1 ? 100 / totalInSlot : 100;
-                    const leftPercent =
-                      totalInSlot > 1 ? idx * widthPercent : 0;
+                    const entryHeight = height / totalInSlot;
+                    const entryTop = top + idx * entryHeight;
 
                     return (
                       <EntryBlock
                         key={entry._id}
                         entry={entry}
-                        top={top}
-                        height={height}
-                        leftPercent={leftPercent}
-                        widthPercent={widthPercent}
+                        top={entryTop}
+                        height={entryHeight}
+                        leftPercent={0}
+                        widthPercent={100}
                         isActive={activeEntryId === entry._id}
                         shouldIgnoreClick={shouldIgnoreClick}
                         onEntryClick={() => onEntryClick(entry)}
