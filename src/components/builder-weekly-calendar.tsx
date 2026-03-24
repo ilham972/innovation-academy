@@ -10,7 +10,7 @@ function timeToMinutes(time: string): number {
   return h! * 60 + m!;
 }
 
-const PX_PER_MINUTE = 1.8;
+const PX_PER_MINUTE = 1.2;
 
 function hexToRgba(hex: string, alpha: number): string {
   const r = parseInt(hex.slice(1, 3), 16);
@@ -51,36 +51,33 @@ function SlotDropZone({
         isOver
           ? "bg-primary/20 ring-2 ring-inset ring-primary/50 rounded"
           : isActiveSlot
-          ? "bg-primary/10 ring-1 ring-inset ring-primary/30 rounded"
-          : isDragHappening
-          ? "ring-1 ring-inset ring-[#CBD5E0] rounded hover:bg-primary/10 hover:ring-primary/30"
-          : isEmpty
-          ? "group cursor-pointer hover:bg-primary/[0.06] rounded"
-          : "group cursor-pointer rounded"
+            ? "bg-primary/10 ring-1 ring-inset ring-primary/30 rounded"
+            : isDragHappening
+              ? "ring-1 ring-inset ring-[#CBD5E0] rounded hover:bg-primary/10 hover:ring-primary/30"
+              : isEmpty
+                ? "group cursor-pointer hover:bg-primary/[0.06] rounded"
+                : "group cursor-pointer rounded"
       }`}
       style={{ top: top + 1, height: height - 2, zIndex: isOver ? 2 : 1 }}
       onClick={onSlotClick}
     >
-      {/* "+" for empty slots when NOT dragging */}
       {isEmpty && !isDragHappening && !isActiveSlot && (
         <div className="absolute inset-0 flex items-center justify-center">
-          <div className="w-7 h-7 rounded-full bg-[#E2E8F0]/50 flex items-center justify-center opacity-50 group-hover:opacity-100 group-hover:bg-primary/15 transition-all">
-            <Plus className="h-3.5 w-3.5 text-[#94A3B8] group-hover:text-primary" />
+          <div className="w-6 h-6 rounded-full bg-[#E2E8F0]/50 flex items-center justify-center opacity-50 group-hover:opacity-100 group-hover:bg-primary/15 transition-all">
+            <Plus className="h-3 w-3 text-[#94A3B8] group-hover:text-primary" />
           </div>
         </div>
       )}
-      {/* Drop indicator when dragging over */}
       {isOver && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <div className="px-2 py-0.5 rounded-md bg-primary/15 text-[10px] font-semibold text-primary">
-            Drop here
+          <div className="px-1.5 py-0.5 rounded-md bg-primary/15 text-[9px] font-semibold text-primary">
+            Drop
           </div>
         </div>
       )}
-      {/* Subtle drop target when dragging but not over */}
       {isDragHappening && !isOver && isEmpty && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <Plus className="h-3 w-3 text-[#CBD5E0]" />
+          <Plus className="h-2.5 w-2.5 text-[#CBD5E0]" />
         </div>
       )}
     </div>
@@ -123,14 +120,14 @@ function EntryBlock({
         isDragging
           ? "opacity-25 shadow-none"
           : isActive
-          ? "ring-2 ring-primary ring-offset-1 shadow-lg cursor-pointer"
-          : "hover:shadow-lg hover:brightness-[0.97] cursor-pointer"
+            ? "ring-2 ring-primary ring-offset-1 shadow-lg cursor-pointer"
+            : "hover:shadow-lg hover:brightness-[0.97] cursor-pointer"
       }`}
       style={{
         top: top + 1,
         height: height - 2,
-        left: `calc(${leftPercent}% + 2px)`,
-        width: `calc(${widthPercent}% - 4px)`,
+        left: `calc(${leftPercent}% + 1px)`,
+        width: `calc(${widthPercent}% - 2px)`,
         borderLeftColor: color,
         backgroundColor: hexToRgba(color, 0.15),
         zIndex: isActive ? 30 : isDragging ? 5 : 10,
@@ -141,23 +138,23 @@ function EntryBlock({
       }}
     >
       <div
-        className="text-[10px] font-bold leading-tight truncate"
+        className="text-[9px] font-bold leading-tight truncate"
         style={{ color }}
       >
         {entry.subject?.name}
       </div>
-      {height > 40 && (
-        <div className="text-[9px] text-[#64748B] leading-tight truncate">
+      {height > 30 && (
+        <div className="text-[8px] text-[#64748B] leading-tight truncate">
           {entry.grade?.name}
         </div>
       )}
-      {height > 55 && (
-        <div className="text-[9px] text-[#94A3B8] leading-tight truncate">
+      {height > 42 && (
+        <div className="text-[8px] text-[#94A3B8] leading-tight truncate">
           {entry.teacher?.name}
         </div>
       )}
-      {height > 70 && (
-        <div className="text-[8px] text-[#94A3B8] leading-tight truncate">
+      {height > 54 && (
+        <div className="text-[7px] text-[#94A3B8] leading-tight truncate">
           {entry.room?.name}
         </div>
       )}
@@ -176,6 +173,8 @@ interface BuilderWeeklyCalendarProps {
   activeEntryId?: string;
   shouldIgnoreClick: () => boolean;
   isDragHappening: boolean;
+  filterStartTime?: string;
+  filterEndTime?: string;
 }
 
 export function BuilderWeeklyCalendar({
@@ -188,6 +187,8 @@ export function BuilderWeeklyCalendar({
   activeEntryId,
   shouldIgnoreClick,
   isDragHappening,
+  filterStartTime,
+  filterEndTime,
 }: BuilderWeeklyCalendarProps) {
   const slotsByDay = useMemo(() => {
     const grouped: Record<number, any[]> = {};
@@ -209,6 +210,11 @@ export function BuilderWeeklyCalendar({
   }, [allEntries]);
 
   const { minTime, maxTime, totalMinutes } = useMemo(() => {
+    if (filterStartTime && filterEndTime) {
+      const min = timeToMinutes(filterStartTime);
+      const max = timeToMinutes(filterEndTime);
+      return { minTime: min, maxTime: max, totalMinutes: max - min };
+    }
     if (allTimeSlots.length === 0)
       return { minTime: 480, maxTime: 1020, totalMinutes: 540 };
     let min = Infinity,
@@ -222,7 +228,7 @@ export function BuilderWeeklyCalendar({
     min = Math.floor(min / 60) * 60;
     max = Math.ceil(max / 60) * 60;
     return { minTime: min, maxTime: max, totalMinutes: max - min };
-  }, [allTimeSlots]);
+  }, [allTimeSlots, filterStartTime, filterEndTime]);
 
   const hourMarkers = useMemo(() => {
     const markers: { minutes: number; label: string }[] = [];
@@ -261,28 +267,30 @@ export function BuilderWeeklyCalendar({
   return (
     <div className="overflow-x-auto -mx-4 px-4 pb-2">
       <div
-        style={{ minWidth: `${48 + operatingDays.length * 120}px` }}
+        style={{
+          minWidth: `${40 + operatingDays.length * 60}px`,
+        }}
         className="bg-white rounded-2xl shadow-[0_2px_12px_rgba(0,0,0,0.06)] overflow-hidden"
       >
         {/* Header row */}
         <div
           className="grid border-b border-[#E2E8F0]"
           style={{
-            gridTemplateColumns: `48px repeat(${operatingDays.length}, 1fr)`,
+            gridTemplateColumns: `40px repeat(${operatingDays.length}, minmax(60px, 1fr))`,
           }}
         >
-          <div className="p-2 bg-[#F5F7FA]" />
-          {operatingDays.map((day) => {
+          <div className="p-1.5 bg-[#F5F7FA]" />
+          {operatingDays.map((day: any) => {
             const isToday = day.dayOfWeek === today;
             return (
               <div
                 key={day._id}
-                className={`p-2 text-center border-l border-[#E2E8F0] ${
+                className={`p-1.5 text-center border-l border-[#E2E8F0] ${
                   isToday ? "bg-primary/10" : "bg-[#F5F7FA]"
                 }`}
               >
                 <span
-                  className={`text-xs font-bold ${
+                  className={`text-[11px] font-bold ${
                     isToday ? "text-primary" : "text-[#2D3748]"
                   }`}
                 >
@@ -297,7 +305,7 @@ export function BuilderWeeklyCalendar({
         <div
           className="grid"
           style={{
-            gridTemplateColumns: `48px repeat(${operatingDays.length}, 1fr)`,
+            gridTemplateColumns: `40px repeat(${operatingDays.length}, minmax(60px, 1fr))`,
           }}
         >
           {/* Time axis */}
@@ -305,12 +313,12 @@ export function BuilderWeeklyCalendar({
             {hourMarkers.map((marker) => (
               <div
                 key={marker.minutes}
-                className="absolute right-0 left-0 flex items-start justify-end pr-1.5"
+                className="absolute right-0 left-0 flex items-start justify-end pr-1"
                 style={{
                   top: (marker.minutes - minTime) * PX_PER_MINUTE,
                 }}
               >
-                <span className="text-[9px] text-[#A0AEC0] font-medium -mt-1.5 leading-none">
+                <span className="text-[8px] text-[#A0AEC0] font-medium -mt-1.5 leading-none">
                   {marker.label}
                 </span>
               </div>
@@ -318,7 +326,7 @@ export function BuilderWeeklyCalendar({
           </div>
 
           {/* Day columns */}
-          {operatingDays.map((day) => {
+          {operatingDays.map((day: any) => {
             const daySlots = slotsByDay[day.dayOfWeek] ?? [];
             const isToday = day.dayOfWeek === today;
 

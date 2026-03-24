@@ -91,6 +91,14 @@ export default defineSchema({
     .index("by_clerk_id", ["clerkUserId"])
     .index("by_approved", ["isApproved"]),
 
+  sessions: defineTable({
+    name: v.string(),
+    startTime: v.string(),
+    endTime: v.string(),
+    sortOrder: v.number(),
+    isActive: v.boolean(),
+  }),
+
   centerSettings: defineTable({
     centerName: v.string(),
     defaultSlotDuration: v.number(),

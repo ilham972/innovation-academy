@@ -5,6 +5,7 @@ import {
   Building2,
   CalendarDays,
   Clock,
+  Layers,
   GraduationCap,
   BookOpen,
   Users,
@@ -32,6 +33,12 @@ const settingsItems = [
     icon: Clock,
     label: "Time Slots",
     desc: "Per-day slot configuration",
+  },
+  {
+    href: "/settings/sessions",
+    icon: Layers,
+    label: "Sessions",
+    desc: "Morning, Evening, Night periods",
   },
   {
     href: "/settings/grades",

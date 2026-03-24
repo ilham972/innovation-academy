@@ -16,6 +16,7 @@ import type * as operatingDays from "../operatingDays.js";
 import type * as overrides from "../overrides.js";
 import type * as rooms from "../rooms.js";
 import type * as schedule from "../schedule.js";
+import type * as sessions from "../sessions.js";
 import type * as subjects from "../subjects.js";
 import type * as teachers from "../teachers.js";
 import type * as timeSlots from "../timeSlots.js";
@@ -36,6 +37,7 @@ declare const fullApi: ApiFromModules<{
   overrides: typeof overrides;
   rooms: typeof rooms;
   schedule: typeof schedule;
+  sessions: typeof sessions;
   subjects: typeof subjects;
   teachers: typeof teachers;
   timeSlots: typeof timeSlots;

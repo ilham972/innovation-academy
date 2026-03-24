@@ -99,11 +99,15 @@ export default function TimetableBuilderPage() {
   const subjects = useQuery(api.subjects.getActive);
   const teachers = useQuery(api.teachers.getActive);
   const rooms = useQuery(api.rooms.getActive);
+  const sessions = useQuery(api.sessions.getActive);
 
   // UI state
   const [viewMode, setViewMode] = useState<ViewMode>("week");
   const [selectedDay, setSelectedDay] = useState<number>(1);
   const [selectedFilterId, setSelectedFilterId] = useState("");
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(
+    null
+  );
   const [showForm, setShowForm] = useState(false);
   const [editingEntry, setEditingEntry] = useState<any>(null);
   const [selectedSlotId, setSelectedSlotId] = useState("");
@@ -173,6 +177,15 @@ export default function TimetableBuilderPage() {
     if (!allTimeSlots || !selectedSlotId) return null;
     return allTimeSlots.find((s) => s._id === selectedSlotId);
   }, [allTimeSlots, selectedSlotId]);
+
+  const activeSession = useMemo(() => {
+    if (!sessions || sessions.length === 0) return null;
+    if (selectedSessionId === "__all__") return null;
+    if (selectedSessionId) {
+      return sessions.find((s) => s._id === selectedSessionId) ?? sessions[0]!;
+    }
+    return sessions[0]!;
+  }, [sessions, selectedSessionId]);
 
   const activeDragEntry = useMemo(() => {
     if (!activeDragId || activeDragId === "new-class" || !allEntries)
@@ -424,6 +437,35 @@ export default function TimetableBuilderPage() {
             </span>
           </div>
 
+          {/* Session tabs */}
+          {sessions && sessions.length > 0 && (
+            <div className="flex gap-1 mb-3 overflow-x-auto pb-1">
+              {sessions.map((session) => (
+                <button
+                  key={session._id}
+                  onClick={() => setSelectedSessionId(session._id)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap ${
+                    activeSession?._id === session._id
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-white text-[#4A5568] border border-[#E2E8F0]"
+                  }`}
+                >
+                  {session.name}
+                </button>
+              ))}
+              <button
+                onClick={() => setSelectedSessionId("__all__")}
+                className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap ${
+                  selectedSessionId === "__all__"
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-white text-[#4A5568] border border-[#E2E8F0]"
+                }`}
+              >
+                All
+              </button>
+            </div>
+          )}
+
           {/* Interactive calendar */}
           <BuilderWeeklyCalendar
             operatingDays={activeDays}
@@ -439,6 +481,8 @@ export default function TimetableBuilderPage() {
             }
             shouldIgnoreClick={shouldIgnoreClick}
             isDragHappening={isDragActive}
+            filterStartTime={activeSession?.startTime}
+            filterEndTime={activeSession?.endTime}
           />
 
           {/* Drag overlay */}
