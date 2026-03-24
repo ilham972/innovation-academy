@@ -21,7 +21,6 @@ import {
   MouseSensor,
   TouchSensor,
   closestCenter,
-  useDraggable,
 } from "@dnd-kit/core";
 import type { DragStartEvent, DragEndEvent } from "@dnd-kit/core";
 import {
@@ -31,7 +30,6 @@ import {
   Edit2,
   AlertTriangle,
   Loader2,
-  GripVertical,
 } from "lucide-react";
 import Link from "next/link";
 import { DAY_SHORT_NAMES, formatTime } from "@/lib/days";
@@ -39,31 +37,6 @@ import { toast } from "sonner";
 import { BuilderWeeklyCalendar } from "@/components/builder-weekly-calendar";
 
 type ViewMode = "week" | "day" | "teacher" | "room" | "grade";
-
-// ---------- Draggable "New Class" Chip ----------
-function NewClassChip() {
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
-    id: "new-class",
-    data: { type: "new-class" },
-  });
-
-  return (
-    <div
-      ref={setNodeRef}
-      {...listeners}
-      {...attributes}
-      className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-white font-medium text-sm shadow-md select-none ${
-        isDragging
-          ? "opacity-40 cursor-grabbing"
-          : "cursor-grab hover:shadow-lg active:cursor-grabbing"
-      }`}
-    >
-      <Plus className="h-4 w-4" />
-      <span>New Class</span>
-      <GripVertical className="h-3.5 w-3.5 opacity-60" />
-    </div>
-  );
-}
 
 // ---------- Drag Overlay Preview ----------
 function EntryDragPreview({ entry }: { entry: any }) {
@@ -180,11 +153,8 @@ export default function TimetableBuilderPage() {
 
   const activeSession = useMemo(() => {
     if (!sessions || sessions.length === 0) return null;
-    if (selectedSessionId === "__all__") return null;
-    if (selectedSessionId) {
-      return sessions.find((s) => s._id === selectedSessionId) ?? sessions[0]!;
-    }
-    return sessions[0]!;
+    if (!selectedSessionId || selectedSessionId === "__all__") return null;
+    return sessions.find((s) => s._id === selectedSessionId) ?? sessions[0]!;
   }, [sessions, selectedSessionId]);
 
   const activeDragEntry = useMemo(() => {
@@ -293,31 +263,26 @@ export default function TimetableBuilderPage() {
       slotId: string;
     };
 
-    if (active.id === "new-class") {
-      // Dragged "New Class" chip onto a slot → open add form
-      openAddForm(dropData.dayOfWeek, dropData.slotId);
-    } else {
-      // Dragged existing entry → reschedule
-      const entry = (active.data.current as any)?.entry;
-      if (!entry) return;
+    // Dragged existing entry → reschedule
+    const entry = (active.data.current as any)?.entry;
+    if (!entry) return;
 
-      // No-op if dropped on same slot
-      if (
-        entry.dayOfWeek === dropData.dayOfWeek &&
-        entry.timeSlotId === dropData.slotId
-      )
-        return;
+    // No-op if dropped on same slot
+    if (
+      entry.dayOfWeek === dropData.dayOfWeek &&
+      entry.timeSlotId === dropData.slotId
+    )
+      return;
 
-      try {
-        await rescheduleEntry({
-          id: entry._id,
-          dayOfWeek: dropData.dayOfWeek,
-          timeSlotId: dropData.slotId as any,
-        });
-        toast.success(`Moved to ${DAY_SHORT_NAMES[dropData.dayOfWeek]}`);
-      } catch (e: any) {
-        toast.error(e.message);
-      }
+    try {
+      await rescheduleEntry({
+        id: entry._id,
+        dayOfWeek: dropData.dayOfWeek,
+        timeSlotId: dropData.slotId as any,
+      });
+      toast.success(`Moved to ${DAY_SHORT_NAMES[dropData.dayOfWeek]}`);
+    } catch (e: any) {
+      toast.error(e.message);
     }
   };
 
@@ -427,16 +392,6 @@ export default function TimetableBuilderPage() {
           onDragEnd={handleDragEnd}
           onDragCancel={handleDragCancel}
         >
-          {/* Drag source + helper text */}
-          <div className="flex items-center gap-3 mb-3">
-            <NewClassChip />
-            <span className="text-[11px] text-[#A0AEC0] leading-tight">
-              Drag onto calendar
-              <br />
-              or tap empty slots
-            </span>
-          </div>
-
           {/* Session tabs */}
           {sessions && sessions.length > 0 && (
             <div className="flex gap-1 mb-3 overflow-x-auto pb-1">
@@ -456,7 +411,7 @@ export default function TimetableBuilderPage() {
               <button
                 onClick={() => setSelectedSessionId("__all__")}
                 className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap ${
-                  selectedSessionId === "__all__"
+                  !selectedSessionId || selectedSessionId === "__all__"
                     ? "bg-primary text-primary-foreground"
                     : "bg-white text-[#4A5568] border border-[#E2E8F0]"
                 }`}
@@ -487,12 +442,7 @@ export default function TimetableBuilderPage() {
 
           {/* Drag overlay */}
           <DragOverlay dropAnimation={null}>
-            {activeDragId === "new-class" ? (
-              <div className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-white font-medium text-sm shadow-2xl">
-                <Plus className="h-4 w-4" />
-                New Class
-              </div>
-            ) : activeDragEntry ? (
+            {activeDragEntry ? (
               <EntryDragPreview entry={activeDragEntry} />
             ) : null}
           </DragOverlay>

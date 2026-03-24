@@ -41,10 +41,8 @@ export function WeeklyCalendar() {
   // Auto-select first session
   const activeSession = useMemo(() => {
     if (!sessions || sessions.length === 0) return null;
-    if (selectedSessionId) {
-      return sessions.find((s) => s._id === selectedSessionId) ?? sessions[0]!;
-    }
-    return sessions[0]!;
+    if (!selectedSessionId || selectedSessionId === "__all__") return null;
+    return sessions.find((s) => s._id === selectedSessionId) ?? sessions[0]!;
   }, [sessions, selectedSessionId]);
 
   const slotsByDay = useMemo(() => {
@@ -153,7 +151,7 @@ export function WeeklyCalendar() {
           <button
             onClick={() => setSelectedSessionId("__all__")}
             className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap ${
-              selectedSessionId === "__all__"
+              !selectedSessionId || selectedSessionId === "__all__"
                 ? "bg-primary text-primary-foreground"
                 : "bg-white text-[#4A5568] border border-[#E2E8F0]"
             }`}
