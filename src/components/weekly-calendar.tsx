@@ -5,7 +5,7 @@ import { api } from "../../convex/_generated/api";
 import { DAY_SHORT_NAMES } from "@/lib/days";
 import { formatTime } from "@/lib/days";
 import { Loader2 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 function timeToMinutes(time: string): number {
   const [h, m] = time.split(":").map(Number);
@@ -28,8 +28,20 @@ export function WeeklyCalendar() {
   const sessions = useQuery(api.sessions.getActive);
 
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(
-    null
+    () => {
+      if (typeof window === "undefined") return null;
+      return localStorage.getItem("home-session-tab");
+    }
   );
+
+  const selectSession = useCallback((id: string | null) => {
+    setSelectedSessionId(id);
+    if (id) {
+      localStorage.setItem("home-session-tab", id);
+    } else {
+      localStorage.removeItem("home-session-tab");
+    }
+  }, []);
 
   const activeDays = useMemo(() => {
     if (!operatingDays) return [];
@@ -138,7 +150,7 @@ export function WeeklyCalendar() {
           {sessions.map((session) => (
             <button
               key={session._id}
-              onClick={() => setSelectedSessionId(session._id)}
+              onClick={() => selectSession(session._id)}
               className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap ${
                 activeSession?._id === session._id
                   ? "bg-primary text-primary-foreground"
@@ -149,7 +161,7 @@ export function WeeklyCalendar() {
             </button>
           ))}
           <button
-            onClick={() => setSelectedSessionId("__all__")}
+            onClick={() => selectSession("__all__")}
             className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap ${
               !selectedSessionId || selectedSessionId === "__all__"
                 ? "bg-primary text-primary-foreground"

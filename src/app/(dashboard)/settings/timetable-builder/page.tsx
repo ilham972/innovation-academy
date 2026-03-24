@@ -2,7 +2,7 @@
 
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -79,8 +79,20 @@ export default function TimetableBuilderPage() {
   const [selectedDay, setSelectedDay] = useState<number>(1);
   const [selectedFilterId, setSelectedFilterId] = useState("");
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(
-    null
+    () => {
+      if (typeof window === "undefined") return null;
+      return localStorage.getItem("builder-session-tab");
+    }
   );
+
+  const selectSession = useCallback((id: string | null) => {
+    setSelectedSessionId(id);
+    if (id) {
+      localStorage.setItem("builder-session-tab", id);
+    } else {
+      localStorage.removeItem("builder-session-tab");
+    }
+  }, []);
   const [showForm, setShowForm] = useState(false);
   const [editingEntry, setEditingEntry] = useState<any>(null);
   const [selectedSlotId, setSelectedSlotId] = useState("");
@@ -398,7 +410,7 @@ export default function TimetableBuilderPage() {
               {sessions.map((session) => (
                 <button
                   key={session._id}
-                  onClick={() => setSelectedSessionId(session._id)}
+                  onClick={() => selectSession(session._id)}
                   className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap ${
                     activeSession?._id === session._id
                       ? "bg-primary text-primary-foreground"
@@ -409,7 +421,7 @@ export default function TimetableBuilderPage() {
                 </button>
               ))}
               <button
-                onClick={() => setSelectedSessionId("__all__")}
+                onClick={() => selectSession("__all__")}
                 className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap ${
                   !selectedSessionId || selectedSessionId === "__all__"
                     ? "bg-primary text-primary-foreground"
